@@ -23,7 +23,7 @@ The goal was to create a product that feels like a **real interview preparation 
 
 ---
 
-### ⚡ 3. Smart UI/UX
+### ⚡ 2. Smart UI/UX
 
 * Clean, modern interface (SaaS-style)
 
@@ -44,7 +44,7 @@ The goal was to create a product that feels like a **real interview preparation 
 
 ---
 
-### 🧠 4. AI-Powered Responses
+### 🧠 3. AI-Powered Responses
 
 * Uses prompt engineering to make the chatbot behave like a **placement mentor**
 * Answers are:

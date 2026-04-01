@@ -106,6 +106,12 @@ const ParsedBotMessage = ({ content }) => {
 const ChatInterface = ({ messages, isLoading, error, onSendMessage, onBack, onRegenerate, isMockMode, onNewChat }) => {
     const messagesEndRef = useRef(null);
     const [inputVal, setInputVal] = useState("");
+    
+    // Voice Agent States
+    const [botVoiceEnabled, setBotVoiceEnabled] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const recognitionRef = useRef(null);
+    const lastSpokenMessageId = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -115,7 +121,107 @@ const ChatInterface = ({ messages, isLoading, error, onSendMessage, onBack, onRe
         scrollToBottom();
     }, [messages, isLoading]);
 
+    // Initialize Speech Recognition
+    useEffect(() => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-IN'; // Optimizes for Indian accents, improving accuracy
+            
+            recognition.onresult = (event) => {
+                let currentTranscript = "";
+                for (let i = 0; i < event.results.length; i++) {
+                    currentTranscript += event.results[i][0].transcript;
+                }
+                setInputVal(currentTranscript);
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Speech recognition error", event.error);
+                setIsListening(false);
+            };
+
+            recognition.onend = () => {
+                setIsListening(false);
+            };
+            
+            recognitionRef.current = recognition;
+        }
+    }, []);
+
+    // Text to Speech
+    useEffect(() => {
+        if (messages.length > 0 && botVoiceEnabled) {
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage.role !== 'user' && lastMessage.id !== lastSpokenMessageId.current) {
+                lastSpokenMessageId.current = lastMessage.id;
+                window.speechSynthesis.cancel();
+                
+                const textToSpeak = lastMessage.content
+                    .replace(/(\*\*|__)(.*?)\1/g, '$2') // Strip bold
+                    .replace(/(\*|_)(.*?)\1/g, '$2') // Strip italic
+                    .replace(/###/g, '')
+                    .replace(/##/g, '')
+                    .replace(/#/g, '')
+                    .replace(/`/g, '')
+                    .replace(/---/g, '')
+                    .replace(/💡/g, '')
+                    .replace(/Question:/gi, '')
+                    .replace(/Answer:/gi, '')
+                    .replace(/Interview Tip:/gi, '')
+                    .trim();
+                    
+                const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                
+                // Find a more natural voice (Google or Microsoft Natural)
+                const voices = window.speechSynthesis.getVoices();
+                const naturalVoice = voices.find(v => 
+                    (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium')) && v.lang.startsWith('en')
+                ) || voices.find(v => v.lang.startsWith('en-US') || v.lang.startsWith('en-GB'));
+                
+                if (naturalVoice) {
+                    utterance.voice = naturalVoice;
+                }
+                
+                // Slow down slightly for clarity
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+    }, [messages, botVoiceEnabled]);
+
+    const toggleListening = () => {
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+        } else {
+            setInputVal(""); // Clear before speaking
+            recognitionRef.current?.start();
+            setIsListening(true);
+        }
+    };
+
+    const toggleBotVoice = () => {
+        setBotVoiceEnabled(prev => {
+            const next = !prev;
+            if (!next) {
+                window.speechSynthesis.cancel();
+            } else {
+                lastSpokenMessageId.current = null;
+            }
+            return next;
+        });
+    };
+
     const handleSend = () => {
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+        }
         if (inputVal.trim() && !isLoading) {
             onSendMessage(inputVal.trim());
             setInputVal("");
@@ -166,6 +272,15 @@ const ChatInterface = ({ messages, isLoading, error, onSendMessage, onBack, onRe
                             <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Active</span>
                         </div>
                     </div>
+                    <button 
+                        onClick={toggleBotVoice}
+                        className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${botVoiceEnabled ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-surface-dim'}`}
+                        title={botVoiceEnabled ? "Disable Bot Voice" : "Enable Bot Voice"}
+                    >
+                        <span className="material-symbols-outlined !text-[20px]">
+                            {botVoiceEnabled ? "volume_up" : "volume_off"}
+                        </span>
+                    </button>
                 </header>
 
                 {/* Chat Area */}
@@ -267,6 +382,14 @@ const ChatInterface = ({ messages, isLoading, error, onSendMessage, onBack, onRe
                             />
 
                             <div className="flex items-center gap-1 p-2">
+                                <button 
+                                    onClick={toggleListening}
+                                    disabled={isLoading || !recognitionRef.current}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${isListening ? 'bg-red-50 text-red-500 animate-pulse' : 'text-on-surface-variant hover:bg-surface-dim'}`}
+                                    title={isListening ? "Stop Recording" : "Start Voice Input"}
+                                >
+                                    <span className="material-symbols-outlined !text-[18px]">{isListening ? 'stop_circle' : 'mic'}</span>
+                                </button>
                                 <button
                                     onClick={handleSend}
                                     disabled={!inputVal.trim() || isLoading}
